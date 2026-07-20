@@ -153,11 +153,30 @@ if "report_df" in st.session_state:
     st.subheader("2. Report")
 
     # Show commission dollar values instead of internal count columns.
+    # Find the $100-sale payout column from the enabled threshold rule instead
+    # of assuming that the rule ID is always "big_sale_bonus".
+    threshold_rule = next(
+        (
+            rule
+            for rule in rules
+            if rule.get("enabled", True)
+            and rule.get("type") == "per_transaction_threshold"
+        ),
+        None,
+    )
+    threshold_payout_column = (
+        f"{threshold_rule['id']}_payout" if threshold_rule else None
+    )
+
     display_df = pd.DataFrame({
         "Store": report_df["store"],
         "Employee": report_df["employee_name"],
         "Sales": report_df["transaction_count"],
-        "$100+ Sales": report_df.get("big_sale_bonus_payout", 0.0),
+        "$100+ Sales": (
+            report_df.get(threshold_payout_column, 0.0)
+            if threshold_payout_column
+            else 0.0
+        ),
         "5000+ Puff": report_df.get("puff_promo_payout", 0.0),
         "B4G1": report_df.get("B4G1_payout", 0.0),
         "Total Commission": report_df["total_commission"],
