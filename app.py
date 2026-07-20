@@ -138,6 +138,10 @@ if generate:
     st.session_state.report_end_date = end_date
     st.session_state.generate_requested = False
 
+    # Force one automatic rerun after calculation so the saved report is
+    # rendered immediately. The user does not need to click a second time.
+    st.rerun()
+
 # Render the most recently completed report outside the button block.
 if "report_df" in st.session_state:
     report_df = st.session_state.report_df
@@ -160,7 +164,7 @@ if "report_df" in st.session_state:
     currency_columns = ["$100+ Sales", "5000+ Puff", "B4G1", "Total Commission"]
     st.dataframe(
         display_df.style.format({column: "${:,.2f}" for column in currency_columns}),
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
     )
 
