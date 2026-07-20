@@ -16,7 +16,7 @@ actually runs against your real accounts, run `python inspect_sample.py
 store_1` (included in this project) to dump one raw sale to your terminal,
 and we'll adjust the field mapping in `normalize_sale()` below together.
 """
-
+import os
 import json
 import time
 from datetime import datetime, time as dt_time, timedelta, timezone
@@ -29,6 +29,11 @@ API_BASE_TEMPLATE = "https://api.lightspeedapp.com/API/V3/Account/{account_id}"
 
 
 def load_config():
+    config_json = os.getenv("STORES_CONFIG_JSON")
+
+    if config_json:
+        return json.loads(config_json)
+
     with open(CONFIG_PATH, "r") as f:
         return json.load(f)
 
