@@ -33,7 +33,7 @@
         "B4G1 Gummies"
       ],
       "payout_amount": 1.0,
-      "count_mode": "transaction"
+      "count_mode": "line"
     }
   ]
 }
