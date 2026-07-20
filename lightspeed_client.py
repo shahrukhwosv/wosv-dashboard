@@ -31,9 +31,13 @@ API_BASE_TEMPLATE = "https://api.lightspeedapp.com/API/V3/Account/{account_id}"
 def load_config():
     config_json = os.getenv("STORES_CONFIG_JSON")
 
+    print("Variable exists:", config_json is not None)
+    print("Variable length:", len(config_json) if config_json else 0)
+
     if config_json:
         return json.loads(config_json)
 
+    print("Falling back to stores_config.json")
     with open(CONFIG_PATH, "r") as f:
         return json.load(f)
 
