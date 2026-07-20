@@ -11,6 +11,7 @@ your instructions. Adding a new rule type later just means adding a new
 """
 
 import json
+import os
 from collections import defaultdict
 import pandas as pd
 
@@ -21,9 +22,21 @@ def load_rules(path="rules_config.json"):
 
 
 def load_stores_meta(path="stores_config.json"):
-    with open(path, "r") as f:
-        cfg = json.load(f)
-    return {k: v for k, v in cfg["stores"].items()}
+    config_json = os.getenv("STORES_CONFIG_JSON")
+
+    if config_json:
+        config = json.loads(config_json)
+    else:
+        with open(path, "r") as f:
+            config = json.load(f)
+
+    return {
+        store_key: {
+            "name": store.get("name", store_key),
+            "avg_ticket_threshold": store.get("avg_ticket_threshold", 0),
+        }
+        for store_key, store in config.get("stores", {}).items()
+    }
 
 
 def calculate_commissions(transactions, rules, stores_meta):
