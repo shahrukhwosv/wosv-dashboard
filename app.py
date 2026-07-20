@@ -125,22 +125,28 @@ if generate:
 
     progress.progress(1.0, text="Calculating commissions...")
 
-    if not all_transactions:
-        st.warning("No transactions found for that store/date range.")
-        st.stop()
+    print("=== STARTING COMMISSION CALCULATION ===")
 
-    report_df = calculate_commissions(all_transactions, rules, stores_meta)
-    progress.empty()
+if not all_transactions:
+    print("No transactions found")
+    st.warning("No transactions found for that store/date range.")
+    st.stop()
 
-    # Save the completed report so it remains visible across Streamlit reruns.
-    st.session_state.report_df = report_df
-    st.session_state.report_start_date = start_date
-    st.session_state.report_end_date = end_date
-    st.session_state.generate_requested = False
+print("Before calculate_commissions")
+report_df = calculate_commissions(all_transactions, rules, stores_meta)
+print("After calculate_commissions")
 
-    # Force one automatic rerun after calculation so the saved report is
-    # rendered immediately. The user does not need to click a second time.
-    st.rerun()
+progress.empty()
+
+st.session_state.report_df = report_df
+print("Saved report_df")
+
+st.session_state.report_start_date = start_date
+st.session_state.report_end_date = end_date
+st.session_state.generate_requested = False
+
+print("About to rerun")
+st.rerun()
 
 # Render the most recently completed report outside the button block.
 if "report_df" in st.session_state:
