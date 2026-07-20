@@ -48,11 +48,11 @@ with col1:
     st.subheader("1. Choose scope")
 
     store_options = ["All connected stores"] + sorted(
-    [v["name"] for v in connected_stores.values()],
-    key=str.casefold
-)
+        [v["name"] for v in connected_stores.values()],
+        key=str.casefold,
+    )
 
-selected_store_label = st.selectbox("Store", store_options)
+    selected_store_label = st.selectbox("Store", store_options)
 
     default_start = date.today() - timedelta(days=14)
     start_date = st.date_input("Period start", value=default_start)
