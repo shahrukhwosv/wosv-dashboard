@@ -56,7 +56,13 @@ with col1:
     start_date = st.date_input("Period start", value=default_start)
     end_date = st.date_input("Period end", value=date.today())
 
-    generate = st.button("Generate Report", type="primary")
+    if "generate_requested" not in st.session_state:
+        st.session_state.generate_requested = False
+
+    if st.button("Generate Report", type="primary"):
+        st.session_state.generate_requested = True
+
+    generate = st.session_state.generate_requested
 
 with col2:
     st.subheader("Active commission rules")
@@ -125,6 +131,18 @@ if generate:
 
     report_df = calculate_commissions(all_transactions, rules, stores_meta)
     progress.empty()
+
+    # Save the completed report so it remains visible across Streamlit reruns.
+    st.session_state.report_df = report_df
+    st.session_state.report_start_date = start_date
+    st.session_state.report_end_date = end_date
+    st.session_state.generate_requested = False
+
+# Render the most recently completed report outside the button block.
+if "report_df" in st.session_state:
+    report_df = st.session_state.report_df
+    report_start_date = st.session_state.report_start_date
+    report_end_date = st.session_state.report_end_date
 
     st.subheader("2. Report")
 
@@ -222,6 +240,6 @@ if generate:
     st.download_button(
         label="Download as Excel",
         data=buffer,
-        file_name=f"commission_report_{start_date}_{end_date}.xlsx",
+        file_name=f"commission_report_{report_start_date}_{report_end_date}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
