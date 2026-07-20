@@ -286,6 +286,8 @@ def normalize_sale(
     subtotal = float(
         sale.get("calcSubtotal", sale.get("displayableSubtotal", 0)) or 0
     )
+    discount = abs(float(sale.get("calcDiscount", sale.get("discount", 0)) or 0))
+    net_subtotal = max(subtotal - discount, 0.0)
 
     lines = sale.get("SaleLines", {}).get("SaleLine", [])
     if isinstance(lines, dict):
@@ -345,6 +347,8 @@ def normalize_sale(
         "employee_name": employees.get(employee_id, f"Employee {employee_id}"),
         "total": total,
         "subtotal": subtotal,
+        "discount": discount,
+        "net_subtotal": net_subtotal,
         "promo_matches": promo_matches,
         "promo_transactions": promo_transactions,
     }
