@@ -127,26 +127,26 @@ if generate:
 
     print("=== STARTING COMMISSION CALCULATION ===")
 
-if not all_transactions:
-    print("No transactions found")
-    st.warning("No transactions found for that store/date range.")
-    st.stop()
+	if not all_transactions:
+    		print("No transactions found")
+    		st.warning("No transactions found for that store/date range.")
+    		st.stop()
 
-print("Before calculate_commissions")
-report_df = calculate_commissions(all_transactions, rules, stores_meta)
-print("After calculate_commissions")
+	print("Before calculate_commissions")
+	report_df = calculate_commissions(all_transactions, rules, stores_meta)
+	print("After calculate_commissions")
 
-progress.empty()
+	progress.empty()
 
-st.session_state.report_df = report_df
-print("Saved report_df")
+	st.session_state.report_df = report_df
+	print("Saved report_df")
 
-st.session_state.report_start_date = start_date
-st.session_state.report_end_date = end_date
-st.session_state.generate_requested = False
+	st.session_state.report_start_date = start_date
+	st.session_state.report_end_date = end_date
+	st.session_state.generate_requested = False
 
-print("About to rerun")
-st.rerun()
+	print("About to rerun")
+	st.rerun()
 
 # Render the most recently completed report outside the button block.
 if "report_df" in st.session_state:
