@@ -39,6 +39,14 @@ def load_config():
 
 
 def save_config(config):
+    # On Railway, configuration comes from an environment variable.
+    # Writing stores_config.json during a token refresh causes Streamlit to
+    # detect a file change and rerun the app before the report is displayed.
+    # Keep refreshed tokens in memory for the current report instead.
+    if os.getenv("STORES_CONFIG_JSON"):
+        return
+
+    # Local setup still saves OAuth credentials to stores_config.json.
     with open(CONFIG_PATH, "w") as f:
         json.dump(config, f, indent=2)
 
@@ -278,11 +286,6 @@ def normalize_sale(
     subtotal = float(
         sale.get("calcSubtotal", sale.get("displayableSubtotal", 0)) or 0
     )
-    # Commission threshold uses the merchandise subtotal after discounts,
-    # before tax. Lightspeed may return calcDiscount as negative or positive,
-    # so normalize it to a positive discount amount.
-    discount = abs(float(sale.get("calcDiscount", 0) or 0))
-    net_subtotal = max(subtotal - discount, 0.0)
 
     lines = sale.get("SaleLines", {}).get("SaleLine", [])
     if isinstance(lines, dict):
@@ -342,8 +345,6 @@ def normalize_sale(
         "employee_name": employees.get(employee_id, f"Employee {employee_id}"),
         "total": total,
         "subtotal": subtotal,
-        "discount": discount,
-        "net_subtotal": net_subtotal,
         "promo_matches": promo_matches,
         "promo_transactions": promo_transactions,
     }
