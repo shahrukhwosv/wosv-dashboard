@@ -71,16 +71,18 @@ def calculate_commissions(transactions, rules, stores_meta):
             payout = 0.0
 
             if rule["type"] == "per_transaction_threshold":
-                threshold = rule["threshold_amount"]
-                amount = rule["payout_amount"]
-                amount_field = rule.get("amount_field", "total")
-                qualifying = sum(
-                    1
+                threshold = float(rule["threshold_amount"])
+                amount = float(rule["payout_amount"])
+
+                # Pay once for every complete threshold reached on each sale,
+                # using the after-discount, pre-tax merchandise subtotal.
+                # Example: $350 net subtotal at a $100 threshold = 3 payouts.
+                payout_units = sum(
+                    int(float(tx.get("net_subtotal", 0) or 0) // threshold)
                     for tx in tx_list
-                    if float(tx.get(amount_field, 0) or 0) >= threshold
                 )
-                payout = qualifying * amount
-                row[f"{rule_id}_count"] = qualifying
+                payout = payout_units * amount
+                row[f"{rule_id}_count"] = payout_units
 
             elif rule["type"] == "average_ticket_threshold":
                 store_threshold = stores_meta.get(store, {}).get(

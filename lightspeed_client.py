@@ -31,13 +31,9 @@ API_BASE_TEMPLATE = "https://api.lightspeedapp.com/API/V3/Account/{account_id}"
 def load_config():
     config_json = os.getenv("STORES_CONFIG_JSON")
 
-    print("Variable exists:", config_json is not None)
-    print("Variable length:", len(config_json) if config_json else 0)
-
     if config_json:
         return json.loads(config_json)
 
-    print("Falling back to stores_config.json")
     with open(CONFIG_PATH, "r") as f:
         return json.load(f)
 
@@ -282,6 +278,11 @@ def normalize_sale(
     subtotal = float(
         sale.get("calcSubtotal", sale.get("displayableSubtotal", 0)) or 0
     )
+    # Commission threshold uses the merchandise subtotal after discounts,
+    # before tax. Lightspeed may return calcDiscount as negative or positive,
+    # so normalize it to a positive discount amount.
+    discount = abs(float(sale.get("calcDiscount", 0) or 0))
+    net_subtotal = max(subtotal - discount, 0.0)
 
     lines = sale.get("SaleLines", {}).get("SaleLine", [])
     if isinstance(lines, dict):
@@ -341,6 +342,8 @@ def normalize_sale(
         "employee_name": employees.get(employee_id, f"Employee {employee_id}"),
         "total": total,
         "subtotal": subtotal,
+        "discount": discount,
+        "net_subtotal": net_subtotal,
         "promo_matches": promo_matches,
         "promo_transactions": promo_transactions,
     }
