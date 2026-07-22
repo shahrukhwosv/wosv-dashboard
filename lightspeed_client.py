@@ -226,7 +226,7 @@ def fetch_sales(config, store_key, start_date, end_date):
             f"><,{_lightspeed_timestamp(start_utc)},"
             f"{_lightspeed_timestamp(end_utc_inclusive)}",
         ),
-        ("load_relations", '["SaleLines"]'),
+        ("load_relations", '["SaleLines","SalePayments","Register"]'),
     ]
     print(f"[{store_key}] Requesting page 1 of sales...")
     data = api_get(config, store_key, "Sale.json", params=params)
@@ -352,4 +352,60 @@ def normalize_sale(
         "promo_matches": promo_matches,
         "promo_transactions": promo_transactions,
     }
+
+def extract_card_payments(sale):
+    """
+    Returns a list of normalized credit-card payment records from one sale.
+
+    Output:
+        [
+            {
+                "sale_id": "...",
+                "timestamp": "...",
+                "amount": 12.34,
+                "register": "...",
+                "payment_type": "...",
+            }
+        ]
+    """
+    payments = (
+        sale.get("SalePayments", {})
+            .get("SalePayment", [])
+    )
+
+    if isinstance(payments, dict):
+        payments = [payments]
+
+    results = []
+
+    for payment in payments:
+        amount = float(
+            payment.get("amount", payment.get("calcTotal", 0)) or 0
+        )
+
+        payment_type = (
+            payment.get("paymentTypeName")
+            or payment.get("type")
+            or ""
+        )
+
+        # Skip cash payments
+        if "cash" in payment_type.lower():
+            continue
+
+        results.append(
+            {
+                "sale_id": sale.get("saleID"),
+                "timestamp": sale.get("timeStamp"),
+                "amount": round(amount, 2),
+                "register": (
+                    sale.get("Register", {})
+                        .get("name", "")
+                ),
+                "payment_type": payment_type,
+                "employee_id": sale.get("employeeID"),
+            }
+        )
+
+    return results
 
