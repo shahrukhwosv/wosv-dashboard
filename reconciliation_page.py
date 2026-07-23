@@ -123,6 +123,29 @@ if run:
     m3.metric("❌ Missing charge", len(results["missing_charge"]))
     m4.metric("❓ Unexplained Valor charge", len(results["unexplained_valor_charge"]))
 
+    mismatch_net = sum(r["amount_diff"] for r in results["likely_mismatch"])
+    missing_total = sum(r["total"] for r in results["missing_charge"])
+    unexplained_total = sum(r["base_amount"] for r in results["unexplained_valor_charge"])
+    overall_net = mismatch_net - missing_total + unexplained_total
+
+    d1, d2, d3, d4 = st.columns(4)
+    d1.metric(
+        "Mismatch $ (Valor − LS)", f"${mismatch_net:,.2f}",
+        help="Sum of the Difference column above. Positive = Valor charged more than Lightspeed rang up; negative = Valor charged less."
+    )
+    d2.metric(
+        "Missing charge $", f"-${missing_total:,.2f}" if missing_total else "$0.00",
+        help="Total Lightspeed sales with no card charge found at all - money never collected."
+    )
+    d3.metric(
+        "Unexplained Valor $", f"+${unexplained_total:,.2f}" if unexplained_total else "$0.00",
+        help="Total card charges with no matching Lightspeed sale - extra money collected with nothing rung up for it."
+    )
+    d4.metric(
+        "Net difference (Valor − LS)", f"${overall_net:,.2f}",
+        help="All three above combined. Positive = Valor collected more overall than Lightspeed's sales account for; negative = Valor collected less."
+    )
+
     # --- Missing charge: Lightspeed sale with NO nearby Valor charge at all ---
     if results["missing_charge"]:
         st.markdown("### ❌ Missing charge (rung up in Lightspeed, no card charge found)")
@@ -146,7 +169,7 @@ if run:
                 "Employee": r["lightspeed"]["employee_name"],
                 "Lightspeed Total": r["lightspeed"]["total"],
                 "Valor Charge (base)": r["closest_valor"]["base_amount"],
-                "Difference": r["amount_diff"],
+                "Difference (Valor - Lightspeed)": r["amount_diff"],
                 "Lightspeed Time": r["lightspeed"]["timestamp"],
                 "Valor Time": r["closest_valor"]["timestamp"],
             }
@@ -204,7 +227,7 @@ if run:
                 "Employee": r["lightspeed"]["employee_name"],
                 "Lightspeed Total": r["lightspeed"]["total"],
                 "Valor Charge": r["closest_valor"]["base_amount"],
-                "Difference": r["amount_diff"],
+                "Difference (Valor - Lightspeed)": r["amount_diff"],
                 "Lightspeed Time": r["lightspeed"]["timestamp"],
                 "Valor Time": r["closest_valor"]["timestamp"],
             }
