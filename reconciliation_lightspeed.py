@@ -33,6 +33,23 @@ def _get_store_timezone(store_key):
     return ZoneInfo(tz_name)
 
 
+# ValorPay's daily batch doesn't cut off at local midnight for every store -
+# some settle on a later cutoff (e.g. Princeton's batch closes around 1am),
+# meaning a sale at 12:30am still belongs to the PREVIOUS business day in
+# Valor's world, even though Lightspeed (and our date picker) would call it
+# "today." Setting a store's boundary here shifts the pulled Lightspeed
+# window to match, so both sides agree on where one business day ends and
+# the next starts. Default is midnight (no shift, matches old behavior).
+DEFAULT_DAY_BOUNDARY = dt_time(0, 0)
+STORE_DAY_BOUNDARY_OVERRIDES = {
+    "store_1": dt_time(1, 0),  # Princeton - Valor batch closes ~1am
+}
+
+
+def _get_store_day_boundary(store_key):
+    return STORE_DAY_BOUNDARY_OVERRIDES.get(store_key, DEFAULT_DAY_BOUNDARY)
+
+
 def _extract_tender_type(sale):
     """
     Looks at a raw Sale record's SalePayments and tries to determine if it
@@ -106,13 +123,15 @@ def fetch_card_sales(config, store_key, start_date, end_date, employees):
     limit = 100
     max_pages = 50
     store_timezone = _get_store_timezone(store_key)
+    day_boundary = _get_store_day_boundary(store_key)
 
     # Convert local store dates to UTC boundaries, same approach as
     # lightspeed_client.fetch_sales, so "July 5" means the store's actual
-    # business day, not a UTC calendar day.
-    start_local = datetime.combine(start_date, dt_time.min, tzinfo=store_timezone)
+    # BUSINESS day (which may not start/end at exact midnight - see
+    # STORE_DAY_BOUNDARY_OVERRIDES above), not a UTC calendar day.
+    start_local = datetime.combine(start_date, day_boundary, tzinfo=store_timezone)
     end_local_exclusive = datetime.combine(
-        end_date + timedelta(days=1), dt_time.min, tzinfo=store_timezone
+        end_date + timedelta(days=1), day_boundary, tzinfo=store_timezone
     )
     start_utc = start_local.astimezone(timezone.utc)
     end_utc_inclusive = end_local_exclusive.astimezone(timezone.utc) - timedelta(seconds=1)
