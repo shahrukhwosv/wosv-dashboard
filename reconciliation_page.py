@@ -49,12 +49,15 @@ with col1:
     end_date = st.date_input("Period end", value=date.today())
 
 with col2:
-    st.subheader("2. Upload ValorPay report")
-    uploaded_file = st.file_uploader(
-        f"Upload the ValorPay batch report CSV for {selected_label}", type=["csv"]
+    st.subheader("2. Upload ValorPay report(s)")
+    uploaded_files = st.file_uploader(
+        f"Upload one or more ValorPay batch report CSVs for {selected_label} "
+        f"(e.g. one per day, if your date range spans multiple batches)",
+        type=["csv"],
+        accept_multiple_files=True,
     )
 
-run = st.button("Run Reconciliation", type="primary", disabled=(uploaded_file is None))
+run = st.button("Run Reconciliation", type="primary", disabled=(not uploaded_files))
 
 if run:
     if start_date > end_date:
@@ -71,7 +74,29 @@ if run:
             st.error(f"Could not pull Lightspeed data: {e}")
             st.stop()
 
-    valor_sales, other_valor_tx = parse_valor_csv(uploaded_file)
+    valor_sales = []
+    other_valor_tx = []
+    duplicate_tx_ids = set()
+    seen_tx_ids = set()
+
+    for f in uploaded_files:
+        file_sales, file_others = parse_valor_csv(f)
+        for s in file_sales:
+            tx_id = s.get("transaction_id")
+            if tx_id and tx_id in seen_tx_ids:
+                duplicate_tx_ids.add(tx_id)
+                continue  # skip - same charge already loaded from another file
+            if tx_id:
+                seen_tx_ids.add(tx_id)
+            valor_sales.append(s)
+        other_valor_tx.extend(file_others)
+
+    if duplicate_tx_ids:
+        st.warning(
+            f"{len(duplicate_tx_ids)} transaction(s) appeared in more than one "
+            f"uploaded file (same Transaction ID) - duplicates were skipped so "
+            f"they aren't counted twice."
+        )
 
     st.info(
         f"Lightspeed: {len(card_sales)} card sale(s) found "
@@ -144,6 +169,14 @@ if run:
 
     with st.expander(f"✅ Show matched transactions ({len(results['matched'])})"):
         if results["matched"]:
+            delayed_count = sum(1 for r in results["matched"] if r["delayed"])
+            if delayed_count:
+                st.caption(
+                    f"{delayed_count} of these matched only after a longer-than-"
+                    f"usual delay (more than {2} minutes between the Lightspeed "
+                    f"sale and the Valor charge) - amount was still exactly "
+                    f"right, just entered late. Marked below."
+                )
             df = pd.DataFrame([
                 {
                     "Sale ID": r["lightspeed"]["sale_id"],
@@ -151,6 +184,7 @@ if run:
                     "Amount": r["lightspeed"]["total"],
                     "Lightspeed Time": r["lightspeed"]["timestamp"],
                     "Valor Time": r["valor"]["timestamp"],
+                    "Delayed": "Yes" if r["delayed"] else "",
                 }
                 for r in results["matched"]
             ]).sort_values("Lightspeed Time")
@@ -189,6 +223,7 @@ if run:
                 "Amount": r["lightspeed"]["total"],
                 "Lightspeed Time": r["lightspeed"]["timestamp"],
                 "Valor Time": r["valor"]["timestamp"],
+                "Delayed": "Yes" if r["delayed"] else "",
             }
             for r in results["matched"]
         ]).to_excel(writer, index=False, sheet_name="Matched")
