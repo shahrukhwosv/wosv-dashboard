@@ -20,7 +20,8 @@ run, so a normal daily page load costs one day's worth of Lightspeed API
 calls per store, not a full month/year re-pull.
 """
 import os
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 
@@ -28,6 +29,20 @@ from lightspeed_client import fetch_sales
 from sheets_client import get_worksheet
 
 PACE_LOG_WORKSHEET_NAME = "Daily Sales Log"
+STORE_TIMEZONE = ZoneInfo("America/Chicago")
+
+
+def store_local_today():
+    """
+    "Today" as a calendar date in the stores' own timezone (Central), not
+    whatever timezone the server happens to run in. Railway's servers run in
+    UTC, which is 5-6 hours ahead of Central - without this, for several
+    hours every evening the server would think a new day had already
+    started while it's still the prior business day in Texas, throwing off
+    which day counts as "yesterday" and how many days have elapsed in the
+    month/year.
+    """
+    return datetime.now(STORE_TIMEZONE).date()
 
 
 def _pace_log_sheet_id():
@@ -103,7 +118,7 @@ def update_daily_log(config, store_keys, through_date=None, backfill_start=None)
     Returns the number of (store, day) rows appended.
     """
     if through_date is None:
-        through_date = date.today() - timedelta(days=1)
+        through_date = store_local_today() - timedelta(days=1)
     if backfill_start is None:
         backfill_start = date(through_date.year, 1, 1)
 
@@ -150,7 +165,7 @@ def compute_pace(df, store_key, today=None):
     * total days in the period.
     """
     if today is None:
-        today = date.today()
+        today = store_local_today()
 
     store_df = df[df["store"] == store_key]
     yesterday = today - timedelta(days=1)
