@@ -101,7 +101,7 @@ else:
 
     rows.sort(key=lambda row: row["store"])
 
-    table_height = 48 + len(rows) * 38
+    table_height = 40 + len(rows) * 36
 
     components.html(
         f"""
@@ -235,8 +235,11 @@ else:
     st.markdown(
         f"""
         <style>
+        .region-wrap {{
+            margin-top: -10px;
+        }}
         .region-divider {{
-            margin: 4px 0 8px 0;
+            margin: 2px 0 4px 0;
             border: none;
             border-top: 1px solid #333;
         }}
@@ -260,10 +263,12 @@ else:
             opacity: 0.6;
         }}
         </style>
-        <hr class="region-divider">
-        <div class="region-row">
-            {_region_block("North Stores Pace", north_total, north_missing)}
-            {_region_block("South Stores Pace", south_total, south_missing)}
+        <div class="region-wrap">
+            <hr class="region-divider">
+            <div class="region-row">
+                {_region_block("North Stores Pace", north_total, north_missing)}
+                {_region_block("South Stores Pace", south_total, south_missing)}
+            </div>
         </div>
         """,
         unsafe_allow_html=True,
