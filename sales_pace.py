@@ -159,41 +159,56 @@ def update_daily_log(config, store_keys, through_date=None, backfill_start=None)
 def compute_pace(df, store_key, today=None):
     """
     Given the full log DataFrame, returns pace figures for one store:
-    yesterday's total, projected monthly total, projected annual total.
+    most recent day's total, projected monthly total, projected annual
+    total, and the actual date those figures are calculated through.
 
     Uses a flat run-rate: (sales so far this period / days elapsed so far)
-    * total days in the period.
+    * total days in the period - "days elapsed so far" is based on the last
+    date actually present in the log (capped at yesterday, since today
+    isn't finished yet), NOT blindly assumed to be yesterday. If the log
+    hasn't been fetched in a day or two, this keeps the rate accurate
+    instead of quietly diluting it with days that have no data yet.
     """
     if today is None:
         today = store_local_today()
 
     store_df = df[df["store"] == store_key]
-    yesterday = today - timedelta(days=1)
+    latest_possible = today - timedelta(days=1)
 
-    yesterday_row = store_df[store_df["date"] == yesterday]
-    yesterday_total = float(yesterday_row["total"].sum()) if not yesterday_row.empty else 0.0
+    if store_df.empty:
+        return {
+            "as_of": None,
+            "yesterday_total": 0.0,
+            "projected_monthly": 0.0,
+            "projected_annual": 0.0,
+        }
 
-    month_start = today.replace(day=1)
-    mtd_df = store_df[(store_df["date"] >= month_start) & (store_df["date"] <= yesterday)]
+    as_of = min(store_df["date"].max(), latest_possible)
+
+    as_of_row = store_df[store_df["date"] == as_of]
+    as_of_total = float(as_of_row["total"].sum()) if not as_of_row.empty else 0.0
+
+    month_start = as_of.replace(day=1)
+    mtd_df = store_df[(store_df["date"] >= month_start) & (store_df["date"] <= as_of)]
     mtd_total = float(mtd_df["total"].sum())
-    days_elapsed_month = (yesterday - month_start).days + 1 if yesterday >= month_start else 0
+    days_elapsed_month = (as_of - month_start).days + 1
 
-    if today.month == 12:
-        next_month_start = date(today.year + 1, 1, 1)
+    if as_of.month == 12:
+        next_month_start = date(as_of.year + 1, 1, 1)
     else:
-        next_month_start = date(today.year, today.month + 1, 1)
+        next_month_start = date(as_of.year, as_of.month + 1, 1)
     days_in_month = (next_month_start - month_start).days
 
     projected_monthly = (
         (mtd_total / days_elapsed_month) * days_in_month if days_elapsed_month > 0 else 0.0
     )
 
-    year_start = date(today.year, 1, 1)
-    ytd_df = store_df[(store_df["date"] >= year_start) & (store_df["date"] <= yesterday)]
+    year_start = date(as_of.year, 1, 1)
+    ytd_df = store_df[(store_df["date"] >= year_start) & (store_df["date"] <= as_of)]
     ytd_total = float(ytd_df["total"].sum())
-    days_elapsed_year = (yesterday - year_start).days + 1 if yesterday >= year_start else 0
+    days_elapsed_year = (as_of - year_start).days + 1
 
-    next_year_start = date(today.year + 1, 1, 1)
+    next_year_start = date(as_of.year + 1, 1, 1)
     days_in_year = (next_year_start - year_start).days
 
     projected_annual = (
@@ -201,7 +216,8 @@ def compute_pace(df, store_key, today=None):
     )
 
     return {
-        "yesterday_total": yesterday_total,
+        "as_of": as_of,
+        "yesterday_total": as_of_total,
         "projected_monthly": projected_monthly,
         "projected_annual": projected_annual,
     }

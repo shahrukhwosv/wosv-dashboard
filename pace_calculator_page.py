@@ -58,9 +58,11 @@ else:
     rows = []
     for store_key in store_keys:
         pace = compute_pace(df, store_key)
+        as_of = pace["as_of"]
         rows.append({
             "Store": store_names[store_key],
-            "Yesterday's Sales": pace["yesterday_total"],
+            "As Of": f"{as_of.month}/{as_of.day}" if as_of else "-",
+            "Latest Day's Sales": pace["yesterday_total"],
             "Projected Monthly Total": pace["projected_monthly"],
             "Projected Annual Total": pace["projected_annual"],
         })
@@ -71,11 +73,12 @@ else:
         return f"${value:,.2f}"
 
     def _row_html(row):
-        yesterday = row["Yesterday's Sales"]
+        latest_sales = row["Latest Day's Sales"]
         return (
             "<tr>"
             f"<td class='store-cell'>{row['Store']}</td>"
-            f"<td>{_money(yesterday)}</td>"
+            f"<td>{row['As Of']}</td>"
+            f"<td>{_money(latest_sales)}</td>"
             f"<td>{_money(row['Projected Monthly Total'])}</td>"
             f"<td>{_money(row['Projected Annual Total'])}</td>"
             "</tr>"
@@ -107,7 +110,8 @@ else:
         <table class="pace-table">
             <tr>
                 <th>Store</th>
-                <th>Yesterday's Sales</th>
+                <th>As Of</th>
+                <th>Latest Day's Sales</th>
                 <th>Projected Monthly Total</th>
                 <th>Projected Annual Total</th>
             </tr>
