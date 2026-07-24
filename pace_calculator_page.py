@@ -246,7 +246,7 @@ else:
             gap: 6px;
         }}
         .region-block {{
-            flex: 1;
+            flex: 0 0 auto;
         }}
         .region-label {{
             font-size: 0.875rem;
