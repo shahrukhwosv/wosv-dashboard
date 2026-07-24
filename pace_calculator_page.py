@@ -106,11 +106,16 @@ else:
     components.html(
         f"""
         <style>
-        :root {{ color-scheme: light dark; }}
+        :root {{
+            --pace-bg: #ffffff;
+            --pace-text: #262730;
+            --pace-border: #cccccc;
+        }}
         body {{
             font-family: "Source Sans Pro", Arial, sans-serif;
             margin: 0;
-            color: #262730;
+            color: var(--pace-text);
+            background: var(--pace-bg);
         }}
         .pace-table-wrap {{
             width: 100%;
@@ -126,11 +131,11 @@ else:
             font-weight: 700;
             text-align: left;
             padding: 8px 12px;
-            border-bottom: 2px solid #444;
+            border-bottom: 2px solid var(--pace-border);
             cursor: pointer;
             user-select: none;
             white-space: nowrap;
-            background: #fff;
+            background: var(--pace-bg);
         }}
         .pace-table th:hover {{
             color: #ff4b4b;
@@ -142,24 +147,18 @@ else:
         }}
         .pace-table td {{
             padding: 8px 12px;
-            border-bottom: 1px solid #333;
+            border-bottom: 1px solid var(--pace-border);
             white-space: nowrap;
         }}
         .pace-table td.store-cell, .pace-table th[data-key="store"] {{
             font-weight: 700;
             position: sticky;
             left: 0;
-            background: #fff;
+            background: var(--pace-bg);
             z-index: 1;
         }}
         .pace-table th[data-key="store"] {{
             z-index: 2;
-        }}
-        @media (prefers-color-scheme: dark) {{
-            body {{ color: #fafafa; }}
-            .pace-table th {{ border-bottom-color: #666; background: #0e1117; }}
-            .pace-table td {{ border-bottom-color: #444; }}
-            .pace-table td.store-cell, .pace-table th[data-key="store"] {{ background: #0e1117; }}
         }}
         </style>
         <div class="pace-table-wrap">
@@ -177,6 +176,35 @@ else:
         </table>
         </div>
         <script>
+            // Match Streamlit's ACTUAL current theme colors (whatever the
+            // user has it set to - light, dark, or a custom theme), read
+            // directly from the parent page. This is more reliable than
+            // guessing based on the phone/browser's OS-level dark mode
+            // setting, which can disagree with what Streamlit itself is
+            // set to.
+            function syncTheme() {{
+                try {{
+                    const parentDoc = window.parent.document;
+                    const target = parentDoc.querySelector('[data-testid="stAppViewContainer"]') || parentDoc.body;
+                    const cs = window.parent.getComputedStyle(target);
+                    const bg = cs.backgroundColor;
+                    const text = cs.color;
+                    if (bg && bg !== "rgba(0, 0, 0, 0)") {{
+                        document.documentElement.style.setProperty("--pace-bg", bg);
+                    }}
+                    if (text) {{
+                        document.documentElement.style.setProperty("--pace-text", text);
+                    }}
+                    // Rough border color: same as text but faint, works
+                    // reasonably against both light and dark backgrounds.
+                    document.documentElement.style.setProperty("--pace-border", text ? text : "#888");
+                }} catch (e) {{
+                    // Cross-origin or other failure - fall back to the
+                    // CSS defaults already set above.
+                }}
+            }}
+            syncTheme();
+
             let rows = {json.dumps(rows)};
             let sortKey = "store";
             let sortAsc = true;
