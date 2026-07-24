@@ -101,7 +101,7 @@ else:
 
     rows.sort(key=lambda row: row["store"])
 
-    table_height = 90 + len(rows) * 45
+    table_height = 48 + len(rows) * 38
 
     components.html(
         f"""
@@ -219,15 +219,6 @@ else:
     north_missing = sorted(NORTH_STORES - pace_by_name.keys())
     south_missing = sorted(SOUTH_STORES - pace_by_name.keys())
 
-    st.markdown(
-        "<hr style='margin: 4px 0 0 0; border-color: #333;'>",
-        unsafe_allow_html=True,
-    )
-
-    # Default st.columns gap is ~24px and st.metric's value font-size is
-    # ~2.25rem - built with custom HTML instead of st.metric so the gap
-    # (-75% -> 6px) and value font size (-50% -> 1.125rem) can be set
-    # precisely rather than snapping to Streamlit's small/medium/large steps.
     def _region_block(label, total, missing):
         missing_html = (
             f"<div class='region-missing'>Not found: {', '.join(missing)}</div>"
@@ -244,10 +235,14 @@ else:
     st.markdown(
         f"""
         <style>
+        .region-divider {{
+            margin: 4px 0 8px 0;
+            border: none;
+            border-top: 1px solid #333;
+        }}
         .region-row {{
             display: flex;
             gap: 6px;
-            margin-top: -12px;
         }}
         .region-block {{
             flex: 0 0 auto;
@@ -265,6 +260,7 @@ else:
             opacity: 0.6;
         }}
         </style>
+        <hr class="region-divider">
         <div class="region-row">
             {_region_block("North Stores Pace", north_total, north_missing)}
             {_region_block("South Stores Pace", south_total, south_missing)}
