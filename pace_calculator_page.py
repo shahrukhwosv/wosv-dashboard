@@ -176,31 +176,55 @@ else:
         </table>
         </div>
         <script>
-            // Match Streamlit's ACTUAL current theme colors (whatever the
-            // user has it set to - light, dark, or a custom theme), read
-            // directly from the parent page. This is more reliable than
-            // guessing based on the phone/browser's OS-level dark mode
-            // setting, which can disagree with what Streamlit itself is
-            // set to.
+            // Detect whether Streamlit's ACTUAL current theme (whatever the
+            // user has it set to) is light or dark, then apply one of two
+            // known-good, pre-tested color pairs - rather than copying raw
+            // background/text values independently, which risks pairing a
+            // transparent background from one element with a light text
+            // color from another and ending up unreadable either way.
+            function parseRgb(str) {{
+                const m = str.match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)(?:,\\s*([\\d.]+))?\\)/);
+                if (!m) return null;
+                return {{
+                    r: parseInt(m[1]), g: parseInt(m[2]), b: parseInt(m[3]),
+                    a: m[4] !== undefined ? parseFloat(m[4]) : 1
+                }};
+            }}
+
+            function applyTheme(isDark) {{
+                if (isDark) {{
+                    document.documentElement.style.setProperty("--pace-bg", "#0e1117");
+                    document.documentElement.style.setProperty("--pace-text", "#fafafa");
+                    document.documentElement.style.setProperty("--pace-border", "#444444");
+                }} else {{
+                    document.documentElement.style.setProperty("--pace-bg", "#ffffff");
+                    document.documentElement.style.setProperty("--pace-text", "#262730");
+                    document.documentElement.style.setProperty("--pace-border", "#cccccc");
+                }}
+            }}
+
             function syncTheme() {{
                 try {{
                     const parentDoc = window.parent.document;
-                    const target = parentDoc.querySelector('[data-testid="stAppViewContainer"]') || parentDoc.body;
-                    const cs = window.parent.getComputedStyle(target);
-                    const bg = cs.backgroundColor;
-                    const text = cs.color;
-                    if (bg && bg !== "rgba(0, 0, 0, 0)") {{
-                        document.documentElement.style.setProperty("--pace-bg", bg);
+                    const candidates = [
+                        '[data-testid="stAppViewContainer"]',
+                        '[data-testid="stApp"]',
+                        '.stApp',
+                        'body'
+                    ];
+                    for (const selector of candidates) {{
+                        const el = parentDoc.querySelector(selector);
+                        if (!el) continue;
+                        const rgb = parseRgb(window.parent.getComputedStyle(el).backgroundColor);
+                        if (!rgb || rgb.a === 0) continue;
+                        // Standard relative luminance formula.
+                        const luminance = (0.299 * rgb.r + 0.587 * rgb.g + 0.114 * rgb.b) / 255;
+                        applyTheme(luminance < 0.5);
+                        return;
                     }}
-                    if (text) {{
-                        document.documentElement.style.setProperty("--pace-text", text);
-                    }}
-                    // Rough border color: same as text but faint, works
-                    // reasonably against both light and dark backgrounds.
-                    document.documentElement.style.setProperty("--pace-border", text ? text : "#888");
                 }} catch (e) {{
-                    // Cross-origin or other failure - fall back to the
-                    // CSS defaults already set above.
+                    // Cross-origin or other failure - fall back to light,
+                    // the CSS defaults already set above.
                 }}
             }}
             syncTheme();
