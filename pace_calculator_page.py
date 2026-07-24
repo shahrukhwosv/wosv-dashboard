@@ -29,11 +29,17 @@ store_names = {
     key: config["stores"][key].get("name", key) for key in store_keys
 }
 
-if st.button("Refresh sales log"):
-    with st.spinner("Fetching any missing days from Lightspeed..."):
-        added = update_daily_log(config, store_keys)
-    st.success(f"Log updated - added {added} new day(s) of data.")
-    st.cache_data.clear()
+col1, col2 = st.columns(2)
+with col1:
+    if st.button("Reload from sheet"):
+        st.cache_data.clear()
+        st.success("Reloaded.")
+with col2:
+    if st.button("Fetch missing days from Lightspeed"):
+        with st.spinner("Fetching any missing days from Lightspeed - this can take a while for stores with little/no history yet..."):
+            added = update_daily_log(config, store_keys)
+        st.success(f"Log updated - added {added} new day(s) of data.")
+        st.cache_data.clear()
 
 
 @st.cache_data(ttl=3600)
@@ -46,7 +52,7 @@ df = _load_log()
 if df.empty:
     st.info(
         "No sales data logged yet. Run backfill_pace_log.py once from your "
-        "terminal, then come back and click 'Refresh sales log'."
+        "terminal, then click 'Reload from sheet' above."
     )
 else:
     rows = []

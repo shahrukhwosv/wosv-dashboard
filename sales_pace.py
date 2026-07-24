@@ -31,7 +31,25 @@ PACE_LOG_WORKSHEET_NAME = "Daily Sales Log"
 
 
 def _pace_log_sheet_id():
-    return os.getenv("PACE_LOG_SHEET_ID", "18O5VdZ07uSey5554nJiNPaz80Oa2_Xmphm0l8TdkFSU")
+    """
+    The pace log lives in its own Google Sheet (separate from the Touch Tell
+    sheet). Create that sheet once, share it with the service account's
+    client_email (same one already used for Touch Tell - see
+    sheets_client.py's docstring), and set its ID here.
+
+    Locally: set PACE_LOG_SHEET_ID in your environment or .env file.
+    On Railway: add PACE_LOG_SHEET_ID as an environment variable, same
+    pattern as STORES_CONFIG_JSON / GOOGLE_SERVICE_ACCOUNT_JSON.
+    (The sheet ID is the long string in the sheet's URL between /d/ and /edit.)
+    """
+    sheet_id = os.getenv("PACE_LOG_SHEET_ID")
+    if not sheet_id:
+        raise RuntimeError(
+            "PACE_LOG_SHEET_ID is not set. Create a new Google Sheet for the "
+            "daily sales log, share it with the service account's "
+            "client_email, and set PACE_LOG_SHEET_ID to its spreadsheet ID."
+        )
+    return sheet_id
 
 
 def _ensure_header(ws):
@@ -101,10 +119,20 @@ def update_daily_log(config, store_keys, through_date=None, backfill_start=None)
         else:
             start = store_rows["date"].max() + timedelta(days=1)
 
+        total_days = (through_date - start).days + 1
+        if total_days <= 0:
+            print(f"[{store_key}] Already up to date through {through_date.isoformat()}.")
+            continue
+
+        print(f"[{store_key}] Backfilling {total_days} day(s): {start.isoformat()} through {through_date.isoformat()}")
+
         current = start
+        day_num = 0
         while current <= through_date:
+            day_num += 1
             total = get_daily_total(config, store_key, current)
             new_rows.append([current.isoformat(), store_key, total])
+            print(f"[{store_key}] Day {day_num} of {total_days} ({current.isoformat()}): ${total:,.2f}")
             current += timedelta(days=1)
 
     if new_rows:
