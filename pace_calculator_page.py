@@ -219,7 +219,10 @@ else:
     north_missing = sorted(NORTH_STORES - pace_by_name.keys())
     south_missing = sorted(SOUTH_STORES - pace_by_name.keys())
 
-    st.divider()
+    st.markdown(
+        "<hr style='margin: 4px 0 0 0; border-color: #333;'>",
+        unsafe_allow_html=True,
+    )
 
     # Default st.columns gap is ~24px and st.metric's value font-size is
     # ~2.25rem - built with custom HTML instead of st.metric so the gap
@@ -244,6 +247,7 @@ else:
         .region-row {{
             display: flex;
             gap: 6px;
+            margin-top: -12px;
         }}
         .region-block {{
             flex: 0 0 auto;
