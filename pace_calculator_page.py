@@ -106,9 +106,20 @@ else:
     components.html(
         f"""
         <style>
-        body {{ font-family: "Source Sans Pro", Arial, sans-serif; margin: 0; }}
+        :root {{ color-scheme: light dark; }}
+        body {{
+            font-family: "Source Sans Pro", Arial, sans-serif;
+            margin: 0;
+            color: #262730;
+        }}
+        .pace-table-wrap {{
+            width: 100%;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }}
         .pace-table {{
             width: 100%;
+            min-width: 640px;
             border-collapse: collapse;
         }}
         .pace-table th {{
@@ -119,6 +130,7 @@ else:
             cursor: pointer;
             user-select: none;
             white-space: nowrap;
+            background: #fff;
         }}
         .pace-table th:hover {{
             color: #ff4b4b;
@@ -131,11 +143,26 @@ else:
         .pace-table td {{
             padding: 8px 12px;
             border-bottom: 1px solid #333;
+            white-space: nowrap;
         }}
-        .pace-table td.store-cell {{
+        .pace-table td.store-cell, .pace-table th[data-key="store"] {{
             font-weight: 700;
+            position: sticky;
+            left: 0;
+            background: #fff;
+            z-index: 1;
+        }}
+        .pace-table th[data-key="store"] {{
+            z-index: 2;
+        }}
+        @media (prefers-color-scheme: dark) {{
+            body {{ color: #fafafa; }}
+            .pace-table th {{ border-bottom-color: #666; background: #0e1117; }}
+            .pace-table td {{ border-bottom-color: #444; }}
+            .pace-table td.store-cell, .pace-table th[data-key="store"] {{ background: #0e1117; }}
         }}
         </style>
+        <div class="pace-table-wrap">
         <table class="pace-table" id="pace-table">
             <thead>
                 <tr>
@@ -148,6 +175,7 @@ else:
             </thead>
             <tbody id="pace-table-body"></tbody>
         </table>
+        </div>
         <script>
             let rows = {json.dumps(rows)};
             let sortKey = "store";
@@ -219,21 +247,30 @@ else:
     north_missing = sorted(NORTH_STORES - pace_by_name.keys())
     south_missing = sorted(SOUTH_STORES - pace_by_name.keys())
 
+    def _flatten_html(html):
+        """Strips leading whitespace from every line. Markdown treats any
+        line indented 4+ spaces as a literal code block, so nested/spliced
+        HTML fragments (which can end up with inconsistent indentation)
+        need every line flattened to column 0, not just a shared prefix
+        removed - textwrap.dedent() alone isn't reliable here since it only
+        strips a COMMON prefix, which breaks once differently-indented
+        fragments get merged together."""
+        return "\n".join(line.lstrip() for line in html.strip().splitlines())
+
     def _region_block(label, total, missing):
         missing_html = (
             f"<div class='region-missing'>Not found: {', '.join(missing)}</div>"
             if missing else ""
         )
-        return f"""
-        <div class="region-block">
-            <div class="region-label">{label}</div>
-            <div class="region-value">${total:,.2f}</div>
-            {missing_html}
-        </div>
-        """
+        return _flatten_html(f"""
+            <div class="region-block">
+                <div class="region-label">{label}</div>
+                <div class="region-value">${total:,.2f}</div>
+                {missing_html}
+            </div>
+        """)
 
-    st.markdown(
-        f"""
+    region_html = _flatten_html(f"""
         <style>
         .region-wrap {{
             margin-top: -10px;
@@ -270,6 +307,6 @@ else:
                 {_region_block("South Stores Pace", south_total, south_missing)}
             </div>
         </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    """)
+
+    st.markdown(region_html, unsafe_allow_html=True)
