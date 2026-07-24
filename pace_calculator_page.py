@@ -228,6 +228,12 @@ else:
                 }}
             }}
             syncTheme();
+            // Streamlit's light/dark toggle can change the page's colors
+            // client-side without a full reload, so keep re-checking rather
+            // than detecting the theme only once when this table first
+            // loads - otherwise switching themes after load leaves the
+            // table stuck on whatever it detected the first time.
+            setInterval(syncTheme, 1000);
 
             let rows = {json.dumps(rows)};
             let sortKey = "store";
