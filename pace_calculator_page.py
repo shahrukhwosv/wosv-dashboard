@@ -220,12 +220,51 @@ else:
     south_missing = sorted(SOUTH_STORES - pace_by_name.keys())
 
     st.divider()
-    col1, col2 = st.columns(2)
-    with col1:
-        st.metric("North Stores Pace", f"${north_total:,.2f}")
-        if north_missing:
-            st.caption(f"Not found: {', '.join(north_missing)}")
-    with col2:
-        st.metric("South Stores Pace", f"${south_total:,.2f}")
-        if south_missing:
-            st.caption(f"Not found: {', '.join(south_missing)}")
+
+    # Default st.columns gap is ~24px and st.metric's value font-size is
+    # ~2.25rem - built with custom HTML instead of st.metric so the gap
+    # (-75% -> 6px) and value font size (-50% -> 1.125rem) can be set
+    # precisely rather than snapping to Streamlit's small/medium/large steps.
+    def _region_block(label, total, missing):
+        missing_html = (
+            f"<div class='region-missing'>Not found: {', '.join(missing)}</div>"
+            if missing else ""
+        )
+        return f"""
+        <div class="region-block">
+            <div class="region-label">{label}</div>
+            <div class="region-value">${total:,.2f}</div>
+            {missing_html}
+        </div>
+        """
+
+    st.markdown(
+        f"""
+        <style>
+        .region-row {{
+            display: flex;
+            gap: 6px;
+        }}
+        .region-block {{
+            flex: 1;
+        }}
+        .region-label {{
+            font-size: 0.875rem;
+            opacity: 0.7;
+        }}
+        .region-value {{
+            font-size: 1.125rem;
+            font-weight: 600;
+        }}
+        .region-missing {{
+            font-size: 0.75rem;
+            opacity: 0.6;
+        }}
+        </style>
+        <div class="region-row">
+            {_region_block("North Stores Pace", north_total, north_missing)}
+            {_region_block("South Stores Pace", south_total, south_missing)}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
