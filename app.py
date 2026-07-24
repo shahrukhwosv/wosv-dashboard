@@ -9,6 +9,9 @@ Run with:  streamlit run app.py
 
 The actual page content lives in commission_page.py, reconciliation_page.py,
 touch_tell_page.py, and pace_calculator_page.py.
+
+NOTE: pace_calculator_page.py has its own simple password gate built in
+(see PACE_CALCULATOR_PASSWORD) - no login system here at the app level.
 """
 
 import streamlit as st

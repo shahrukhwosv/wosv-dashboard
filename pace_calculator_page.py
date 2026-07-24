@@ -14,12 +14,38 @@ may have a "display_name" field to show instead of the raw store key. If it
 doesn't, this just falls back to showing the store key itself - adjust
 store_names below if you keep display names somewhere else (e.g. hardcoded
 in stores_config.json under a different field, or in a separate mapping).
+
+PASSWORD: set PACE_CALCULATOR_PASSWORD as an environment variable (locally
+and on Railway, same pattern as your other env vars). There's also a
+hardcoded fallback below for local use, same pattern used for
+PACE_LOG_SHEET_ID in sales_pace.py - replace the placeholder with your own
+password.
 """
+import os
+
 import pandas as pd
 import streamlit as st
 
 from lightspeed_client import load_config
 from sales_pace import compute_pace, read_daily_log, update_daily_log
+
+PAGE_PASSWORD = os.getenv("PACE_CALCULATOR_PASSWORD", "PASTE_A_PASSWORD_HERE")
+
+if "pace_calculator_unlocked" not in st.session_state:
+    st.session_state.pace_calculator_unlocked = False
+
+if not st.session_state.pace_calculator_unlocked:
+    st.title("Sales Pace Calculator")
+    with st.form("pace_password_form"):
+        entered_password = st.text_input("Password", type="password")
+        submitted = st.form_submit_button("Unlock")
+    if submitted:
+        if entered_password == PAGE_PASSWORD:
+            st.session_state.pace_calculator_unlocked = True
+            st.rerun()
+        else:
+            st.error("Incorrect password.")
+    st.stop()
 
 st.title("Sales Pace Calculator")
 
