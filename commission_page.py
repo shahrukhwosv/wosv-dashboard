@@ -30,7 +30,8 @@ rules = load_rules()
 stores_meta = load_stores_meta()
 
 connected_stores = {
-    key: val for key, val in stores.items() if val.get("refresh_token")
+    key: val for key, val in stores.items()
+    if val.get("refresh_token") and not val.get("pace_only")
 }
 
 if not connected_stores:
