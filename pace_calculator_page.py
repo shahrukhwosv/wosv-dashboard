@@ -22,9 +22,11 @@ PACE_LOG_SHEET_ID in sales_pace.py - replace the placeholder with your own
 password.
 """
 import os
+import json
 
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 from lightspeed_client import load_config
 from sales_pace import compute_pace, read_daily_log, update_daily_log
@@ -86,35 +88,25 @@ else:
         pace = compute_pace(df, store_key)
         as_of = pace["as_of"]
         rows.append({
-            "Store": store_names[store_key],
-            "As Of": f"{as_of.month}/{as_of.day}" if as_of else "-",
-            "Latest Day's Sales": pace["yesterday_total"],
-            "Projected Monthly Total": pace["projected_monthly"],
-            "Projected Annual Total": pace["projected_annual"],
+            "store": store_names[store_key],
+            # as_of_sort is a real sortable value (ISO date or empty string,
+            # which sorts first); as_of_display is what's actually shown -
+            # sorting on "7/9" vs "7/10" as plain text would misorder them.
+            "as_of_sort": as_of.isoformat() if as_of else "",
+            "as_of_display": f"{as_of.month}/{as_of.day}" if as_of else "-",
+            "latest_sales": pace["yesterday_total"],
+            "projected_monthly": pace["projected_monthly"],
+            "projected_annual": pace["projected_annual"],
         })
 
-    rows.sort(key=lambda row: row["Store"])
+    rows.sort(key=lambda row: row["store"])
 
-    def _money(value):
-        return f"${value:,.2f}"
+    table_height = 90 + len(rows) * 45
 
-    def _row_html(row):
-        latest_sales = row["Latest Day's Sales"]
-        return (
-            "<tr>"
-            f"<td class='store-cell'>{row['Store']}</td>"
-            f"<td>{row['As Of']}</td>"
-            f"<td>{_money(latest_sales)}</td>"
-            f"<td>{_money(row['Projected Monthly Total'])}</td>"
-            f"<td>{_money(row['Projected Annual Total'])}</td>"
-            "</tr>"
-        )
-
-    table_rows = "".join(_row_html(row) for row in rows)
-
-    st.markdown(
+    components.html(
         f"""
         <style>
+        body {{ font-family: "Source Sans Pro", Arial, sans-serif; margin: 0; }}
         .pace-table {{
             width: 100%;
             border-collapse: collapse;
@@ -124,6 +116,17 @@ else:
             text-align: left;
             padding: 8px 12px;
             border-bottom: 2px solid #444;
+            cursor: pointer;
+            user-select: none;
+            white-space: nowrap;
+        }}
+        .pace-table th:hover {{
+            color: #ff4b4b;
+        }}
+        .pace-table th .arrow {{
+            font-size: 11px;
+            opacity: 0.6;
+            margin-left: 4px;
         }}
         .pace-table td {{
             padding: 8px 12px;
@@ -133,16 +136,96 @@ else:
             font-weight: 700;
         }}
         </style>
-        <table class="pace-table">
-            <tr>
-                <th>Store</th>
-                <th>As Of</th>
-                <th>Latest Day's Sales</th>
-                <th>Projected Monthly Total</th>
-                <th>Projected Annual Total</th>
-            </tr>
-            {table_rows}
+        <table class="pace-table" id="pace-table">
+            <thead>
+                <tr>
+                    <th data-key="store" data-type="string">Store<span class="arrow"></span></th>
+                    <th data-key="as_of_sort" data-type="string">As Of<span class="arrow"></span></th>
+                    <th data-key="latest_sales" data-type="number">Latest Day's Sales<span class="arrow"></span></th>
+                    <th data-key="projected_monthly" data-type="number">Projected Monthly Total<span class="arrow"></span></th>
+                    <th data-key="projected_annual" data-type="number">Projected Annual Total<span class="arrow"></span></th>
+                </tr>
+            </thead>
+            <tbody id="pace-table-body"></tbody>
         </table>
+        <script>
+            let rows = {json.dumps(rows)};
+            let sortKey = "store";
+            let sortAsc = true;
+
+            function money(value) {{
+                return "$" + value.toLocaleString(undefined, {{minimumFractionDigits: 2, maximumFractionDigits: 2}});
+            }}
+
+            function render() {{
+                const tbody = document.getElementById("pace-table-body");
+                tbody.innerHTML = rows.map(r => (
+                    "<tr>" +
+                    "<td class='store-cell'>" + r.store + "</td>" +
+                    "<td>" + r.as_of_display + "</td>" +
+                    "<td>" + money(r.latest_sales) + "</td>" +
+                    "<td>" + money(r.projected_monthly) + "</td>" +
+                    "<td>" + money(r.projected_annual) + "</td>" +
+                    "</tr>"
+                )).join("");
+
+                document.querySelectorAll("#pace-table th").forEach(th => {{
+                    const arrow = th.querySelector(".arrow");
+                    if (th.dataset.key === sortKey) {{
+                        arrow.textContent = sortAsc ? "▲" : "▼";
+                    }} else {{
+                        arrow.textContent = "";
+                    }}
+                }});
+            }}
+
+            function sortRows(key, type) {{
+                if (sortKey === key) {{
+                    sortAsc = !sortAsc;
+                }} else {{
+                    sortKey = key;
+                    sortAsc = true;
+                }}
+                rows.sort((a, b) => {{
+                    let av = a[key], bv = b[key];
+                    let cmp = type === "number" ? (av - bv) : String(av).localeCompare(String(bv));
+                    return sortAsc ? cmp : -cmp;
+                }});
+                render();
+            }}
+
+            document.querySelectorAll("#pace-table th").forEach(th => {{
+                th.addEventListener("click", () => sortRows(th.dataset.key, th.dataset.type));
+            }});
+
+            render();
+        </script>
         """,
-        unsafe_allow_html=True,
+        height=table_height,
     )
+
+    # Regional groupings, matched by store name (not store_key, since key
+    # numbering doesn't reflect any north/south grouping). Note: the config
+    # names this store "Greenville" (not "Lower Greenville") - matched
+    # accordingly below.
+    NORTH_STORES = {"Aubrey", "Rowlett", "Princeton", "Frisco", "Liquor Depot"}
+    SOUTH_STORES = {"Oak Lawn", "Greenville", "West Greenville", "Lovers", "Hillcrest"}
+
+    pace_by_name = {row["store"]: row["projected_monthly"] for row in rows}
+
+    north_total = sum(pace_by_name.get(name, 0.0) for name in NORTH_STORES)
+    south_total = sum(pace_by_name.get(name, 0.0) for name in SOUTH_STORES)
+
+    north_missing = sorted(NORTH_STORES - pace_by_name.keys())
+    south_missing = sorted(SOUTH_STORES - pace_by_name.keys())
+
+    st.divider()
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("North Stores Pace", f"${north_total:,.2f}")
+        if north_missing:
+            st.caption(f"Not found: {', '.join(north_missing)}")
+    with col2:
+        st.metric("South Stores Pace", f"${south_total:,.2f}")
+        if south_missing:
+            st.caption(f"Not found: {', '.join(south_missing)}")
