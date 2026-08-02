@@ -29,7 +29,8 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from lightspeed_client import load_config
-from sales_pace import compute_pace, read_daily_log, update_daily_log
+from sales_pace import compute_pace, month_actual_total, read_daily_log, update_daily_log
+from pace_pdf_report import MONTH_NAMES, build_monthly_pdf
 
 PAGE_PASSWORD = os.getenv("PACE_CALCULATOR_PASSWORD", "PASTE_A_PASSWORD_HERE")
 
@@ -368,3 +369,42 @@ else:
     """)
 
     st.markdown(region_html, unsafe_allow_html=True)
+
+    st.divider()
+    st.subheader("Monthly PDF Report")
+
+    col1, col2, col3 = st.columns([1, 1, 1])
+    current_year = df["date"].max().year if not df.empty else None
+    with col1:
+        selected_month_name = st.selectbox("Month", MONTH_NAMES, index=6)
+        selected_month = MONTH_NAMES.index(selected_month_name) + 1
+    with col2:
+        year_options = list(range(2024, 2031))
+        default_year_index = year_options.index(current_year) if current_year in year_options else len(year_options) - 1
+        selected_year = st.selectbox("Year", year_options, index=default_year_index)
+    with col3:
+        st.write("")  # vertical spacer to align the button with the dropdowns
+        st.write("")
+        get_pdf_clicked = st.button("Get PDF")
+
+    if get_pdf_clicked:
+        store_rows = []
+        for store_key in store_keys:
+            total = month_actual_total(df, store_key, selected_year, selected_month)
+            store_rows.append((store_names[store_key], total))
+        store_rows.sort(key=lambda r: r[0])
+
+        monthly_by_name = {name: total for name, total in store_rows}
+        north_month_total = sum(monthly_by_name.get(name, 0.0) for name in NORTH_STORES)
+        south_month_total = sum(monthly_by_name.get(name, 0.0) for name in SOUTH_STORES)
+
+        pdf_buffer = build_monthly_pdf(
+            store_rows, north_month_total, south_month_total, selected_month, selected_year
+        )
+
+        st.download_button(
+            label="Download PDF",
+            data=pdf_buffer,
+            file_name=f"sales_report_{selected_month_name}_{selected_year}.pdf",
+            mime="application/pdf",
+        )

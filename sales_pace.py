@@ -221,3 +221,16 @@ def compute_pace(df, store_key, today=None):
         "projected_monthly": projected_monthly,
         "projected_annual": projected_annual,
     }
+
+
+def month_actual_total(df, store_key, year, month):
+    """Sum of actual (not projected) sales for one store for one completed
+    calendar month, from whatever's in the log. Used for the monthly PDF
+    report - unlike compute_pace, this is a plain sum with no projection
+    math, since a past month is already finished."""
+    store_df = df[df["store"] == store_key]
+    month_df = store_df[
+        (store_df["date"].apply(lambda d: d.year) == year)
+        & (store_df["date"].apply(lambda d: d.month) == month)
+    ]
+    return float(month_df["total"].sum())
