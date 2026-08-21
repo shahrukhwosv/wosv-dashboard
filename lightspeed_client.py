@@ -172,6 +172,104 @@ def fetch_discounts(config, store_key):
 
     return discounts
 
+def fetch_categories(config, store_key):
+    """Returns {categoryID: category_name} for one store.
+
+    Categories are per-account in Lightspeed, so the same category name
+    (e.g. "Rolling Trays") can have a different categoryID at each store.
+    Callers that need a cross-store dropdown should merge by name and look
+    up each store's own categoryID separately (see category_sales page).
+    """
+    categories = {}
+    data = api_get(config, store_key, "Category.json", params={"limit": 100})
+    seen_urls = set()
+
+    while True:
+        raw = data.get("Category", [])
+        if isinstance(raw, dict):
+            raw = [raw]
+        for category in raw:
+            category_id = str(category.get("categoryID", ""))
+            name = str(category.get("name", "") or "").strip()
+            if category_id and name:
+                categories[category_id] = name
+
+        next_url = (data.get("@attributes", {}) or {}).get("next")
+        if not next_url or next_url in seen_urls:
+            break
+        seen_urls.add(next_url)
+        data = api_get_full_url(config, store_key, next_url)
+
+    return categories
+
+
+def fetch_items_by_category(config, store_key, category_id):
+    """Returns a set of itemIDs belonging to one category at one store.
+
+    Filters server-side via Lightspeed's categoryID query param so we don't
+    have to page through the entire item catalog for every lookup.
+    """
+    item_ids = set()
+    data = api_get(
+        config,
+        store_key,
+        "Item.json",
+        params={"limit": 100, "categoryID": category_id},
+    )
+    seen_urls = set()
+
+    while True:
+        raw = data.get("Item", [])
+        if isinstance(raw, dict):
+            raw = [raw]
+        for item in raw:
+            item_id = str(item.get("itemID", ""))
+            if item_id:
+                item_ids.add(item_id)
+
+        next_url = (data.get("@attributes", {}) or {}).get("next")
+        if not next_url or next_url in seen_urls:
+            break
+        seen_urls.add(next_url)
+        data = api_get_full_url(config, store_key, next_url)
+
+    return item_ids
+
+
+def fetch_category_sales(config, store_key, category_id, start_date, end_date):
+    """
+    Sums sales for one store/category over a date range.
+
+    Reuses fetch_sales (same completed/non-voided sales the rest of the app
+    already trusts) and fetch_items_by_category, then sums the line-level
+    total for any SaleLine whose itemID is in that category.
+
+    Returns {"total": float, "quantity": float}
+    """
+    item_ids = fetch_items_by_category(config, store_key, category_id)
+    if not item_ids:
+        return {"total": 0.0, "quantity": 0.0}
+
+    sales = fetch_sales(config, store_key, start_date, end_date)
+
+    total = 0.0
+    quantity = 0.0
+    for sale in sales:
+        lines = sale.get("SaleLines", {}).get("SaleLine", [])
+        if isinstance(lines, dict):
+            lines = [lines]
+        for line in lines:
+            if str(line.get("itemID", "")) not in item_ids:
+                continue
+            line_total = float(
+                line.get("calcTotal", line.get("displayableSubtotal", 0)) or 0
+            )
+            total += line_total
+            quantity += abs(float(line.get("unitQuantity", 1) or 1))
+
+    return {"total": total, "quantity": quantity}
+
+
 def api_get_full_url(config, store_key, url):
     """Same as api_get but for following a full pagination URL Lightspeed
     gives us directly (used for cursor-based pagination)."""
