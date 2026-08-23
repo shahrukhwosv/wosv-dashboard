@@ -236,30 +236,75 @@ def fetch_items_by_category(config, store_key, category_id):
     return item_ids
 
 
-ITEM_BATCH_SIZE = 50  # keeps the itemID filter well under typical URL length limits
+def fetch_items_by_keyword(config, store_key, keyword):
+    """Returns a set of itemIDs whose description contains the given keyword
+    (case-insensitive substring match) at one store.
 
-
-def fetch_category_sales(config, store_key, category_id, start_date, end_date):
+    Uses Lightspeed's "~" LIKE operator with % wildcards on both sides, so
+    "mug" matches "Ceramic Mug", "Travel Mug 16oz", "Mugshot Ale Glass", etc.
     """
-    Sums sales for one store/category over a date range.
+    item_ids = set()
+    data = api_get(
+        config,
+        store_key,
+        "Item.json",
+        params={"limit": 100, "description": f"~,%{keyword}%"},
+    )
+    seen_urls = set()
+
+    while True:
+        raw = data.get("Item", [])
+        if isinstance(raw, dict):
+            raw = [raw]
+        for item in raw:
+            item_id = str(item.get("itemID", ""))
+            if item_id:
+                item_ids.add(item_id)
+
+        next_url = (data.get("@attributes", {}) or {}).get("next")
+        if not next_url or next_url in seen_urls:
+            break
+        seen_urls.add(next_url)
+        data = api_get_full_url(config, store_key, next_url)
+
+    return item_ids
+
+
+ITEM_BATCH_SIZE = 50  # keeps the itemID filter well under typical URL length limits
+SALE_ID_BATCH_SIZE = 50  # same, for the follow-up Sale status lookup
+
+
+def fetch_item_ids_sales(config, store_key, item_ids, start_date, end_date):
+    """
+    Sums sales for one store, for a given set of itemIDs, over a date range.
+
+    Shared by fetch_category_sales and fetch_keyword_sales - the only
+    difference between "category" and "keyword" search is how the itemID
+    set is resolved beforehand; once we have it, the sales lookup is
+    identical.
 
     Queries SaleLine.json directly (instead of pulling every full Sale and
     filtering in Python) so Lightspeed does the filtering server-side:
-      - itemID filtered to just this category's items, via the "IN" operator,
-        batched at ITEM_BATCH_SIZE items per request
-      - load_relations=["Sale"] so we can check each line's parent Sale for
-        completed/voided/archived and get the sale's timeStamp for the date
-        range, since SaleLine itself doesn't carry those fields
+      1. itemID filtered to just this set, via the "IN" operator, batched
+         at ITEM_BATCH_SIZE items per request, and timeStamp filtered to
+         the date range - SaleLine carries its own timeStamp/createTime/
+         completeTime fields directly, so no relation load is needed for
+         this step (SaleLine.json rejects load_relations=["Sale"] with a
+         400 - the relation isn't loadable from this endpoint).
+      2. A small follow-up Sale.json lookup, batched by the saleIDs actually
+         referenced in step 1 (not every sale in the date range), to check
+         completed/voided/archived - fields that only live on Sale.
 
-    NOTE ON THE "IN" OPERATOR: this follows the documented Lightspeed R-Series
-    query syntax (field=operator,value1,value2,...), the same style your
-    existing timeStamp "between" filter uses. If it errors, dump one raw
-    SaleLine with something like `inspect_sample.py` and we'll adjust the
-    param format together - same as the note at the top of this file.
+    NOTE ON THE "IN" OPERATOR: this follows the documented Lightspeed
+    R-Series query syntax (field=operator,value1,value2,...), the same
+    style your existing timeStamp "between" filter uses. If either step
+    errors, dump one raw SaleLine/Sale with `inspect_sample.py` and we'll
+    adjust the param format together - same as the note at the top of this
+    file.
 
     Returns {"total": float, "quantity": float}
     """
-    item_ids = sorted(fetch_items_by_category(config, store_key, category_id))
+    item_ids = sorted(item_ids)
     if not item_ids:
         return {"total": 0.0, "quantity": 0.0}
 
@@ -274,8 +319,9 @@ def fetch_category_sales(config, store_key, category_id, start_date, end_date):
     def _ts(value):
         return value.isoformat(timespec="seconds")
 
-    total = 0.0
-    quantity = 0.0
+    # Step 1: pull matching sale lines (itemID set + date range), server-side filtered.
+    matched_lines = []
+    sale_ids = set()
 
     for i in range(0, len(item_ids), ITEM_BATCH_SIZE):
         batch = item_ids[i:i + ITEM_BATCH_SIZE]
@@ -283,10 +329,9 @@ def fetch_category_sales(config, store_key, category_id, start_date, end_date):
             ("limit", 100),
             ("itemID", "IN," + ",".join(batch)),
             (
-                "Sale.timeStamp",
+                "timeStamp",
                 f"><,{_ts(start_utc)},{_ts(end_utc_inclusive)}",
             ),
-            ("load_relations", '["Sale"]'),
         ]
         data = api_get(config, store_key, "SaleLine.json", params=params)
         seen_urls = set()
@@ -296,19 +341,10 @@ def fetch_category_sales(config, store_key, category_id, start_date, end_date):
             if isinstance(raw, dict):
                 raw = [raw]
             for line in raw:
-                sale = line.get("Sale") or {}
-                if str(sale.get("completed", "true")).lower() != "true":
-                    continue
-                if str(sale.get("voided", "false")).lower() == "true":
-                    continue
-                if str(sale.get("archived", "false")).lower() == "true":
-                    continue
-
-                line_total = float(
-                    line.get("calcTotal", line.get("displayableSubtotal", 0)) or 0
-                )
-                total += line_total
-                quantity += abs(float(line.get("unitQuantity", 1) or 1))
+                matched_lines.append(line)
+                sale_id = str(line.get("saleID", "") or "")
+                if sale_id:
+                    sale_ids.add(sale_id)
 
             next_url = (data.get("@attributes", {}) or {}).get("next")
             if not next_url or next_url in seen_urls:
@@ -316,7 +352,69 @@ def fetch_category_sales(config, store_key, category_id, start_date, end_date):
             seen_urls.add(next_url)
             data = api_get_full_url(config, store_key, next_url)
 
+    if not matched_lines:
+        return {"total": 0.0, "quantity": 0.0}
+
+    # Step 2: check completed/voided/archived only for the sales actually touched.
+    valid_sale_ids = set()
+    sale_ids_list = sorted(sale_ids)
+    for i in range(0, len(sale_ids_list), SALE_ID_BATCH_SIZE):
+        batch = sale_ids_list[i:i + SALE_ID_BATCH_SIZE]
+        params = [
+            ("limit", 100),
+            ("saleID", "IN," + ",".join(batch)),
+        ]
+        data = api_get(config, store_key, "Sale.json", params=params)
+        seen_urls = set()
+
+        while True:
+            raw = data.get("Sale", [])
+            if isinstance(raw, dict):
+                raw = [raw]
+            for sale in raw:
+                if str(sale.get("completed", "true")).lower() != "true":
+                    continue
+                if str(sale.get("voided", "false")).lower() == "true":
+                    continue
+                if str(sale.get("archived", "false")).lower() == "true":
+                    continue
+                valid_sale_ids.add(str(sale.get("saleID", "")))
+
+            next_url = (data.get("@attributes", {}) or {}).get("next")
+            if not next_url or next_url in seen_urls:
+                break
+            seen_urls.add(next_url)
+            data = api_get_full_url(config, store_key, next_url)
+
+    total = 0.0
+    quantity = 0.0
+    for line in matched_lines:
+        if str(line.get("saleID", "") or "") not in valid_sale_ids:
+            continue
+        line_total = float(
+            line.get("calcTotal", line.get("displayableSubtotal", 0)) or 0
+        )
+        total += line_total
+        quantity += abs(float(line.get("unitQuantity", 1) or 1))
+
     return {"total": total, "quantity": quantity}
+
+
+def fetch_category_sales(config, store_key, category_id, start_date, end_date):
+    """Sums sales for one store/category over a date range.
+    See fetch_item_ids_sales for how the sales lookup itself works.
+    """
+    item_ids = fetch_items_by_category(config, store_key, category_id)
+    return fetch_item_ids_sales(config, store_key, item_ids, start_date, end_date)
+
+
+def fetch_keyword_sales(config, store_key, keyword, start_date, end_date):
+    """Sums sales for one store, for all items whose description contains
+    the given keyword, over a date range.
+    See fetch_item_ids_sales for how the sales lookup itself works.
+    """
+    item_ids = fetch_items_by_keyword(config, store_key, keyword)
+    return fetch_item_ids_sales(config, store_key, item_ids, start_date, end_date)
 
 
 def api_get_full_url(config, store_key, url):
