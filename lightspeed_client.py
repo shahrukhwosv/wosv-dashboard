@@ -236,36 +236,85 @@ def fetch_items_by_category(config, store_key, category_id):
     return item_ids
 
 
+ITEM_BATCH_SIZE = 50  # keeps the itemID filter well under typical URL length limits
+
+
 def fetch_category_sales(config, store_key, category_id, start_date, end_date):
     """
     Sums sales for one store/category over a date range.
 
-    Reuses fetch_sales (same completed/non-voided sales the rest of the app
-    already trusts) and fetch_items_by_category, then sums the line-level
-    total for any SaleLine whose itemID is in that category.
+    Queries SaleLine.json directly (instead of pulling every full Sale and
+    filtering in Python) so Lightspeed does the filtering server-side:
+      - itemID filtered to just this category's items, via the "IN" operator,
+        batched at ITEM_BATCH_SIZE items per request
+      - load_relations=["Sale"] so we can check each line's parent Sale for
+        completed/voided/archived and get the sale's timeStamp for the date
+        range, since SaleLine itself doesn't carry those fields
+
+    NOTE ON THE "IN" OPERATOR: this follows the documented Lightspeed R-Series
+    query syntax (field=operator,value1,value2,...), the same style your
+    existing timeStamp "between" filter uses. If it errors, dump one raw
+    SaleLine with something like `inspect_sample.py` and we'll adjust the
+    param format together - same as the note at the top of this file.
 
     Returns {"total": float, "quantity": float}
     """
-    item_ids = fetch_items_by_category(config, store_key, category_id)
+    item_ids = sorted(fetch_items_by_category(config, store_key, category_id))
     if not item_ids:
         return {"total": 0.0, "quantity": 0.0}
 
-    sales = fetch_sales(config, store_key, start_date, end_date)
+    store_timezone = ZoneInfo("America/Chicago")
+    start_local = datetime.combine(start_date, dt_time.min, tzinfo=store_timezone)
+    end_local_exclusive = datetime.combine(
+        end_date + timedelta(days=1), dt_time.min, tzinfo=store_timezone
+    )
+    start_utc = start_local.astimezone(timezone.utc)
+    end_utc_inclusive = end_local_exclusive.astimezone(timezone.utc) - timedelta(seconds=1)
+
+    def _ts(value):
+        return value.isoformat(timespec="seconds")
 
     total = 0.0
     quantity = 0.0
-    for sale in sales:
-        lines = sale.get("SaleLines", {}).get("SaleLine", [])
-        if isinstance(lines, dict):
-            lines = [lines]
-        for line in lines:
-            if str(line.get("itemID", "")) not in item_ids:
-                continue
-            line_total = float(
-                line.get("calcTotal", line.get("displayableSubtotal", 0)) or 0
-            )
-            total += line_total
-            quantity += abs(float(line.get("unitQuantity", 1) or 1))
+
+    for i in range(0, len(item_ids), ITEM_BATCH_SIZE):
+        batch = item_ids[i:i + ITEM_BATCH_SIZE]
+        params = [
+            ("limit", 100),
+            ("itemID", "IN," + ",".join(batch)),
+            (
+                "Sale.timeStamp",
+                f"><,{_ts(start_utc)},{_ts(end_utc_inclusive)}",
+            ),
+            ("load_relations", '["Sale"]'),
+        ]
+        data = api_get(config, store_key, "SaleLine.json", params=params)
+        seen_urls = set()
+
+        while True:
+            raw = data.get("SaleLine", [])
+            if isinstance(raw, dict):
+                raw = [raw]
+            for line in raw:
+                sale = line.get("Sale") or {}
+                if str(sale.get("completed", "true")).lower() != "true":
+                    continue
+                if str(sale.get("voided", "false")).lower() == "true":
+                    continue
+                if str(sale.get("archived", "false")).lower() == "true":
+                    continue
+
+                line_total = float(
+                    line.get("calcTotal", line.get("displayableSubtotal", 0)) or 0
+                )
+                total += line_total
+                quantity += abs(float(line.get("unitQuantity", 1) or 1))
+
+            next_url = (data.get("@attributes", {}) or {}).get("next")
+            if not next_url or next_url in seen_urls:
+                break
+            seen_urls.add(next_url)
+            data = api_get_full_url(config, store_key, next_url)
 
     return {"total": total, "quantity": quantity}
 

@@ -1,15 +1,18 @@
 """
 Category Sales page (category_sales_page.py).
 
-Lets the user pick a category (e.g. "Rolling Trays") from a dropdown and a
-date range, then shows how much each store sold in that category over that
-period.
+Lets the user pick a category (e.g. "Rolling Trays"), a date range, and
+which stores to include, then shows how much each selected store sold in
+that category over that period.
 
 NOTE: Categories are per-account in Lightspeed, so the same category name
 can have a different categoryID at each store. This page builds the
 dropdown from category *names* merged across all stores, then resolves the
-right categoryID for each store individually before pulling sales.
+right categoryID for each store individually before pulling sales. Stores
+are queried in parallel (each store is an independent Lightspeed account,
+so there's no shared state to worry about).
 """
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, timedelta
 
 import pandas as pd
@@ -38,11 +41,37 @@ def build_name_options(categories_by_store):
     return sorted(names, key=str.casefold)
 
 
+def run_report(store_keys, categories_by_store, selected_category, start_date, end_date):
+    """Fetches category sales for each store in parallel."""
+    config = ls.load_config()
+    results = {}
+
+    def _fetch_one(store_key):
+        store_categories = categories_by_store[store_key]
+        category_id = next(
+            (cid for cid, name in store_categories.items() if name == selected_category),
+            None,
+        )
+        if category_id is None:
+            return store_key, None  # no match at this store
+        return store_key, ls.fetch_category_sales(
+            config, store_key, category_id, start_date, end_date
+        )
+
+    with ThreadPoolExecutor(max_workers=max(len(store_keys), 1)) as pool:
+        futures = [pool.submit(_fetch_one, store_key) for store_key in store_keys]
+        for future in as_completed(futures):
+            store_key, result = future.result()
+            results[store_key] = result
+
+    return results
+
+
 config = ls.load_config()
-store_keys = list(config["stores"].keys())
+all_store_keys = list(config["stores"].keys())
 
 with st.spinner("Loading categories..."):
-    categories_by_store = get_categories_by_store(tuple(store_keys))
+    categories_by_store = get_categories_by_store(tuple(all_store_keys))
 
 category_options = build_name_options(categories_by_store)
 
@@ -51,6 +80,12 @@ if not category_options:
     st.stop()
 
 selected_category = st.selectbox("Category", category_options)
+
+store_scope = st.radio("Stores", ["All stores", "Choose stores"], horizontal=True)
+if store_scope == "All stores":
+    selected_stores = all_store_keys
+else:
+    selected_stores = st.multiselect("Select stores", all_store_keys, default=all_store_keys)
 
 col1, col2 = st.columns(2)
 with col1:
@@ -62,30 +97,36 @@ if start_date > end_date:
     st.error("Start date must be before end date.")
     st.stop()
 
-if st.button("Run report", type="primary"):
-    rows = []
-    progress = st.progress(0.0, text="Fetching sales...")
+if not selected_stores:
+    st.info("Pick at least one store to run the report.")
+    st.stop()
 
-    for i, store_key in enumerate(store_keys):
-        store_categories = categories_by_store[store_key]
-        # Find this store's categoryID for the selected name.
-        category_id = next(
-            (cid for cid, name in store_categories.items() if name == selected_category),
-            None,
+if st.button("Run report", type="primary"):
+    with st.spinner(f"Fetching sales for {len(selected_stores)} store(s)..."):
+        results = run_report(
+            selected_stores, categories_by_store, selected_category, start_date, end_date
         )
 
-        if category_id is None:
+    rows = []
+    missing_stores = []
+    for store_key in selected_stores:
+        result = results.get(store_key)
+        if result is None:
+            missing_stores.append(store_key)
             rows.append({"Store": store_key, "Total Sales": 0.0, "Units Sold": 0.0})
         else:
-            progress.progress(i / len(store_keys), text=f"Fetching sales for {store_key}...")
-            result = ls.fetch_category_sales(config, store_key, category_id, start_date, end_date)
             rows.append({
                 "Store": store_key,
                 "Total Sales": result["total"],
                 "Units Sold": result["quantity"],
             })
 
-    progress.empty()
+    if missing_stores:
+        st.warning(
+            f"No category named \"{selected_category}\" found at: "
+            f"{', '.join(missing_stores)}. Shown as $0 below - this likely "
+            f"means that store uses a slightly different category name."
+        )
 
     df = pd.DataFrame(rows)
     total_row = pd.DataFrame([{
