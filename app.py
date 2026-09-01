@@ -8,7 +8,8 @@ instead of Streamlit's default file-name-based labels.
 Run with:  streamlit run app.py
 
 The actual page content lives in commission_page.py, reconciliation_page.py,
-touch_tell_page.py, pace_calculator_page.py, and category_sales_page.py.
+touch_tell_page.py, pace_calculator_page.py, category_sales_page.py, and
+monthly_reports_page.py.
 
 NOTE: pace_calculator_page.py has its own simple password gate built in
 (see PACE_CALCULATOR_PASSWORD) - no login system here at the app level.
@@ -33,6 +34,9 @@ pace_calculator_page = st.Page(
 category_sales_page = st.Page(
     "category_sales_page.py", title="Category Sales", icon="🔍"
 )
+monthly_reports_page = st.Page(
+    "monthly_reports_page.py", title="Monthly Reports", icon="🗂️"
+)
 
 pg = st.navigation({
     "WOSV Dashboard": [
@@ -41,6 +45,7 @@ pg = st.navigation({
         touch_tell_page,
         pace_calculator_page,
         category_sales_page,
+        monthly_reports_page,
     ]
 })
 pg.run()
